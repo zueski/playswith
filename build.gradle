@@ -1,0 +1,82 @@
+buildscript {
+	repositories {
+		jcenter()
+	}
+}
+
+plugins {
+	id "com.eriwen.gradle.js" version "2.14.1"
+	id "com.eriwen.gradle.css" version "2.14.0"
+	id "org.hidetake.ssh" version "2.9.0"
+}
+
+apply plugin: 'org.hidetake.ssh'
+apply plugin: 'war'
+apply plugin: 'js'
+apply plugin: 'css'
+
+configurations {
+	moreLibs
+}
+
+repositories {
+	flatDir { dirs "lib" }
+	mavenCentral()
+}
+
+dependencies {
+	providedCompile   'org.apache.tomcat:tomcat-servlet-api:7.0.37'
+}
+
+
+ssh.settings {
+	knownHosts = allowAnyHosts
+	
+}
+
+remotes {
+	web01 {
+		role 'masterNode'
+		host = 'playswith.tomogara.org'
+		user = 'ec2-user'
+		identity = new File('/homeandy/.ssh/id_rsa')
+	}
+}
+
+war {
+	from 'src/rootContent' // adds a file-set to the root of the archive
+	webInf { from 'src/additionalWebInf' } // adds a file-set to the WEB-INF dir.
+	classpath fileTree('additionalLibs') // adds a file-set to the WEB-INF/lib dir.
+	classpath configurations.moreLibs // adds a configuration to the WEB-INF/lib dir.
+	webXml = file('src/PlaysWith.xml') // copies a file to WEB-INF/web.xml
+}
+
+
+task checkWebServers {
+  doLast {
+	ssh.run {
+	  session(remotes.web01) {
+		// Execute a command
+		def result = execute 'sudo service tomcat8 status'
+		// Also Groovy methods or properties are available in a session closure
+		println result
+	  }
+	}
+  }
+}
+
+
+task deployWar(dependsOn:'war') {
+  doLast {
+	ssh.run {
+	  session(remotes.web01) {
+		put from: 'build/libs/PlaysWith.war', into: '/home/ec2-user/ROOT.war'
+		execute 'sudo rm -rf /usr/share/tomcat8/webapps/ROOT.war /usr/share/tomcat8/webapps/ROOT'
+		execute 'sudo cp /home/ec2-user/ROOT.war /usr/share/tomcat8/webapps/ROOT.war'
+		def result = execute 'sudo service tomcat8 restart'
+		// Also Groovy methods or properties are available in a session closure
+		println result
+	  }
+	}
+  }
+}
